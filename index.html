@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TurboV Bot Status</title>
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent-color: #58a6ff;
+      --accent-hover: #1f6feb;
+      --online: #2ecc71;
+      --starting: #f1c40f;
+      --offline: #e74c3c;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      background-color: var(--card-bg);
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 0.5rem;
+      color: #fff;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 2rem;
+    }
+
+    .status-box {
+      display: inline-flex;
+      align-items: center;
+      background-color: rgba(255, 255, 255, 0.03);
+      border: 1px solid #30363d;
+      padding: 0.75rem 1.5rem;
+      border-radius: 50px;
+      margin-bottom: 1.5rem;
+    }
+
+    .dot {
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      margin-right: 10px;
+      background-color: var(--offline);
+      box-shadow: 0 0 10px var(--offline);
+      transition: all 0.5s ease;
+    }
+
+    .dot.online {
+      background-color: var(--online);
+      box-shadow: 0 0 12px var(--online);
+      animation: pulse 2s infinite;
+    }
+
+    .dot.starting {
+      background-color: var(--starting);
+      box-shadow: 0 0 12px var(--starting);
+      animation: pulse 2s infinite;
+    }
+
+    .dot.offline {
+      background-color: var(--offline);
+      box-shadow: 0 0 12px var(--offline);
+    }
+
+    #status-text {
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .uptime-box {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+    }
+
+    .uptime-box span {
+      color: var(--text-main);
+      font-family: monospace;
+      font-size: 1rem;
+    }
+
+    .btn-main {
+      display: inline-block;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 0.85rem;
+      background-color: var(--accent-color);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 600;
+      border-radius: 6px;
+      transition: background-color 0.2s ease, transform 0.1s ease;
+    }
+
+    .btn-main:hover {
+      background-color: var(--accent-hover);
+    }
+
+    .btn-main:active {
+      transform: scale(0.98);
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.7; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>TurboV Bot Status</h1>
+    <div class="subtitle">Live status directly from the node matrix</div>
+
+    <!-- Status Indicator -->
+    <div>
+      <div class="status-box">
+        <span id="status-dot" class="dot offline"></span>
+        <span id="status-text">OFFLINE</span>
+      </div>
+    </div>
+
+    <!-- Uptime Container -->
+    <div class="uptime-box">
+      Server Uptime: <span id="uptime-display">0d 0h 0m 0s</span>
+    </div>
+
+    <!-- Main Website Button -->
+    <a href="https://www.turbov.dev" target="_blank" class="btn-main">Go to Main Website</a>
+  </div>
+
+  <script>
+    // Link to your Cloudflare Worker URL
+    const WORKER_URL = 'https://botstatus.randomthe1boy2.workers.dev';
+    
+    let uptimeMs = 0;
+    let uptimeInterval;
+
+    function formatUptime(ms) {
+      if (ms <= 0) return "0d 0h 0m 0s";
+      const seconds = Math.floor((ms / 1000) % 60);
+      const minutes = Math.floor((ms / (1000 * 60)) % 60);
+      const hours = Math.floor((ms / (1000 * 60 * 60)) % 24);
+      const days = Math.floor(ms / (1000 * 60 * 60 * 24));
+      return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+    }
+
+    function startLocalUptimeTicker(initialMs) {
+      clearInterval(uptimeInterval);
+      uptimeMs = initialMs;
+      
+      document.getElementById('uptime-display').innerText = formatUptime(uptimeMs);
+      
+      uptimeInterval = setInterval(() => {
+        uptimeMs += 1000;
+        document.getElementById('uptime-display').innerText = formatUptime(uptimeMs);
+      }, 1000);
+    }
+
+    async function checkBotStatus() {
+      try {
+        const response = await fetch(WORKER_URL);
+        
+        // Pterodactyl's client resource route actually sends back real server data!
+        // We will modify the Cloudflare worker logic slightly down the road if needed, 
+        // but for now, we catch standard Ptero resource object layouts.
+        const textPayload = await response.text();
+        let data;
+        try {
+          data = JSON.parse(textPayload);
+        } catch(e) {
+          throw new Error("Invalid backend JSON");
+        }
+        
+        const dot = document.getElementById('status-dot');
+        const text = document.getElementById('status-text');
+
+        // Clean out existing states
+        dot.className = 'dot';
+
+        if (data.state === 'running') {
+          dot.classList.add('online');
+          text.innerText = 'ONLINE';
+          text.style.color = 'var(--online)';
+          
+          // Pull actual uptime from Pterodactyl's native response if available
+          if (data.uptime) {
+            startLocalUptimeTicker(data.uptime);
+          } else {
+            // Fallback: If your worker isn't passing uptime raw yet, it shows running state
+            document.getElementById('uptime-display').innerText = "Active";
+          }
+        } else if (data.state === 'starting') {
+          dot.classList.add('starting');
+          text.innerText = 'STARTING...';
+          text.style.color = 'var(--starting)';
+          clearInterval(uptimeInterval);
+          document.getElementById('uptime-display').innerText = "0d 0h 0m 0s";
+        } else {
+          dot.classList.add('offline');
+          text.innerText = 'OFFLINE';
+          text.style.color = 'var(--offline)';
+          clearInterval(uptimeInterval);
+          document.getElementById('uptime-display').innerText = "0d 0h 0m 0s";
+        }
+      } catch (error) {
+        const dot = document.getElementById('status-dot');
+        const text = document.getElementById('status-text');
+        dot.className = 'dot offline';
+        text.innerText = 'OFFLINE';
+        text.style.color = 'var(--offline)';
+        clearInterval(uptimeInterval);
+        document.getElementById('uptime-display').innerText = "0d 0h 0m 0s";
+      }
+    }
+
+    // Run health check immediately on load, update state cache every 30s
+    checkBotStatus();
+    setInterval(checkBotStatus, 30000);
+  </script>
+</body>
+</html>
